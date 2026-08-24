@@ -1,4 +1,4 @@
-#include "engine/community_models/moss_voicegen/delay_decoder.h"
+#include "engine/models/moss/shared/delay_decoder.h"
 
 #include "engine/models/moss/shared/sampling.h"
 
@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace engine::models::moss_voicegen {
+namespace engine::models::moss::delay {
 namespace {
 
 constexpr float kNegativeInfinity = -std::numeric_limits<float>::infinity();
@@ -28,24 +28,24 @@ void apply_temperature(std::vector<float> & logits, float temperature) {
 
 }  // namespace
 
-MossVoiceGenDelayDecoder::MossVoiceGenDelayDecoder(
-    MossVoiceGenConfig config,
-    MossVoiceGenSamplingOptions sampling,
+Decoder::Decoder(
+    Config config,
+    SamplingOptions sampling,
     uint32_t seed,
-    MossVoiceGenLengthBounds bounds)
+    LengthBounds bounds)
     : config_(std::move(config)),
       sampling_(sampling),
       bounds_(bounds),
       seed_(seed),
       rng_(seed) {
     if (config_.num_codebooks <= 0) {
-        throw std::runtime_error("MOSS-VoiceGenerator delay decoder requires a positive codebook count");
+        throw std::runtime_error("MOSS delay delay decoder requires a positive codebook count");
     }
 }
 
-int32_t MossVoiceGenDelayDecoder::sample_text(std::vector<float> & logits) {
+int32_t Decoder::sample_text(std::vector<float> & logits) {
     if (!sampling_.do_sample) {
-        return engine::models::moss::argmax_index(logits, "moss_voicegen.text");
+        return engine::models::moss::argmax_index(logits, "moss_delay.text");
     }
     return engine::models::moss::sample_index(
         logits,
@@ -53,13 +53,13 @@ int32_t MossVoiceGenDelayDecoder::sample_text(std::vector<float> & logits) {
         sampling_.text_top_p,
         1.0F,  // the temperature is already folded into the logits
         rng_,
-        "moss_voicegen.text",
+        "moss_delay.text",
         nullptr,
         seed_,
         sample_call_index_++);
 }
 
-int32_t MossVoiceGenDelayDecoder::sample_code(std::vector<float> & logits, int64_t codebook) {
+int32_t Decoder::sample_code(std::vector<float> & logits, int64_t codebook) {
     if (sampling_.audio_repetition_penalty != 1.0F) {
         // The reference penalises against every earlier row of this codebook, prompt rows
         // included. Those are all pad, and pad is masked to -inf just below, so restricting
@@ -70,11 +70,11 @@ int32_t MossVoiceGenDelayDecoder::sample_code(std::vector<float> & logits, int64
             previous.push_back(row.codes[static_cast<size_t>(codebook)]);
         }
         engine::models::moss::apply_repetition_penalty(
-            logits, previous, sampling_.audio_repetition_penalty, "moss_voicegen.audio");
+            logits, previous, sampling_.audio_repetition_penalty, "moss_delay.audio");
     }
     forbid(logits, config_.audio_pad_code);
     if (!sampling_.do_sample) {
-        return engine::models::moss::argmax_index(logits, "moss_voicegen.audio");
+        return engine::models::moss::argmax_index(logits, "moss_delay.audio");
     }
     return engine::models::moss::sample_index(
         logits,
@@ -82,13 +82,13 @@ int32_t MossVoiceGenDelayDecoder::sample_code(std::vector<float> & logits, int64
         sampling_.audio_top_p,
         1.0F,
         rng_,
-        "moss_voicegen.audio",
+        "moss_delay.audio",
         nullptr,
         seed_,
         sample_call_index_++);
 }
 
-MossVoiceGenDelayRow MossVoiceGenDelayDecoder::step(MossVoiceGenStepLogits & logits) {
+Row Decoder::step(StepLogits & logits) {
     const int64_t n_vq = config_.num_codebooks;
     const bool delaying = delayed_length_ != kNotDelaying;
 
@@ -166,11 +166,11 @@ MossVoiceGenDelayRow MossVoiceGenDelayDecoder::step(MossVoiceGenStepLogits & log
 
     // Audio side. Codebook i is live once the audio has been running longer than its delay
     // and until the flush window has retired it.
-    MossVoiceGenDelayRow row;
+    Row row;
     row.text_token = next_text;
     row.codes.assign(static_cast<size_t>(n_vq), static_cast<int32_t>(config_.audio_pad_code));
     if (static_cast<int64_t>(logits.audio.size()) != n_vq) {
-        throw std::runtime_error("MOSS-VoiceGenerator delay decoder expects one audio head per codebook");
+        throw std::runtime_error("MOSS delay delay decoder expects one audio head per codebook");
     }
     for (int64_t codebook = 0; codebook < n_vq; ++codebook) {
         const bool started = audio_length_ > codebook;
@@ -207,7 +207,7 @@ MossVoiceGenDelayRow MossVoiceGenDelayDecoder::step(MossVoiceGenStepLogits & log
     return row;
 }
 
-std::vector<int32_t> MossVoiceGenDelayDecoder::extract_audio_codes(
+std::vector<int32_t> Decoder::extract_audio_codes(
     int64_t & codebooks_out,
     int64_t & frames_out) const {
     const int64_t n_vq = config_.num_codebooks;
@@ -216,7 +216,7 @@ std::vector<int32_t> MossVoiceGenDelayDecoder::extract_audio_codes(
     // zero while it is being emitted and no codebook is live yet. Counting it would shift
     // every codebook by one row and make the highest codebook read a pad code from the
     // final flush row.
-    std::vector<const MossVoiceGenDelayRow *> audio_rows;
+    std::vector<const Row *> audio_rows;
     for (const auto & row : history_) {
         const bool carries_codes =
             row.text_token == static_cast<int32_t>(config_.audio_assistant_gen_slot_token_id)
@@ -267,4 +267,4 @@ std::vector<int32_t> MossVoiceGenDelayDecoder::extract_audio_codes(
     return codes;
 }
 
-}  // namespace engine::models::moss_voicegen
+}  // namespace engine::models::moss::delay

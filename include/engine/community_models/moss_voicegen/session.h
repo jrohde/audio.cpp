@@ -1,9 +1,9 @@
 #pragma once
 
 #include "engine/community_models/moss_voicegen/assets.h"
-#include "engine/community_models/moss_voicegen/backbone.h"
-#include "engine/community_models/moss_voicegen/delay_decoder.h"
-#include "engine/community_models/moss_voicegen/heads.h"
+#include "engine/models/moss/shared/delay_backbone.h"
+#include "engine/models/moss/shared/delay_decoder.h"
+#include "engine/models/moss/shared/delay_heads.h"
 #include "engine/community_models/moss_voicegen/tokenizer_text.h"
 #include "engine/framework/core/execution_context.h"
 #include "engine/framework/runtime/session_base.h"
@@ -46,9 +46,9 @@ private:
         const std::string & text,
         const std::string & instruction,
         const std::optional<std::string> & language,
-        const MossVoiceGenSamplingOptions & sampling,
+        const delay::SamplingOptions & sampling,
         uint32_t seed,
-        MossVoiceGenLengthBounds bounds_override);
+        delay::LengthBounds bounds_override);
     std::vector<float> decode_codes(const GeneratedChunk & chunk);
 
     runtime::TaskSpec task_;
@@ -64,8 +64,8 @@ private:
     // The execution context comes from RuntimeSessionBase; the runtimes below borrow it.
     std::unique_ptr<MossVoiceGenTextProcessor> text_processor_;
     std::unique_ptr<moss::AudioCodebookEmbeddings> codebooks_;
-    std::unique_ptr<MossVoiceGenBackboneRuntime> backbone_;
-    std::unique_ptr<MossVoiceGenHeadsRuntime> heads_;
+    std::unique_ptr<delay::BackboneRuntime> backbone_;
+    std::unique_ptr<delay::HeadsRuntime> heads_;
     std::unique_ptr<moss::MossAudioTokenizerDecoder> codec_;
 };
 

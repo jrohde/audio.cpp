@@ -5,9 +5,9 @@
 //       --language English --output out.wav [--weight-type bf16] [--seed 0] [--threads N]
 
 #include "engine/community_models/moss_voicegen/assets.h"
-#include "engine/community_models/moss_voicegen/backbone.h"
-#include "engine/community_models/moss_voicegen/delay_decoder.h"
-#include "engine/community_models/moss_voicegen/heads.h"
+#include "engine/models/moss/shared/delay_backbone.h"
+#include "engine/models/moss/shared/delay_decoder.h"
+#include "engine/models/moss/shared/delay_heads.h"
 #include "engine/community_models/moss_voicegen/tokenizer_text.h"
 #include "engine/framework/audio/wav_writer.h"
 #include "engine/framework/core/backend.h"
@@ -107,29 +107,31 @@ int main(int argc, char ** argv) {
         backend_config.threads = threads;
         engine::core::ExecutionContext execution_context(backend_config);
 
-        const engine::models::moss_voicegen::MossVoiceGenBackboneRuntime backbone(
-            assets, execution_context, 512ull * 1024ull * 1024ull, 8192ull * 1024ull * 1024ull, weight_type);
-        const engine::models::moss_voicegen::MossVoiceGenHeadsRuntime heads(
-            assets, execution_context, 256ull * 1024ull * 1024ull, 4096ull * 1024ull * 1024ull, weight_type);
+        const engine::models::moss::delay::BackboneRuntime backbone(
+            assets->config,
+            assets->model_weights, execution_context, 512ull * 1024ull * 1024ull, 8192ull * 1024ull * 1024ull, weight_type);
+        const engine::models::moss::delay::HeadsRuntime heads(
+            assets->config,
+            assets->model_weights, execution_context, 256ull * 1024ull * 1024ull, 4096ull * 1024ull * 1024ull, weight_type);
 
         // Checkpoint defaults from the model card; this family degenerates at a generic preset.
-        engine::models::moss_voicegen::MossVoiceGenSamplingOptions sampling;
+        engine::models::moss::delay::SamplingOptions sampling;
         sampling.text_temperature = std::stof(arg_value(argc, argv, "--text-temperature", "1.5"));
         sampling.audio_temperature = std::stof(arg_value(argc, argv, "--audio-temperature", "1.5"));
         sampling.audio_top_p = std::stof(arg_value(argc, argv, "--audio-top-p", "0.6"));
         sampling.audio_top_k = std::stoi(arg_value(argc, argv, "--audio-top-k", "50"));
         sampling.audio_repetition_penalty =
             std::stof(arg_value(argc, argv, "--audio-repetition-penalty", "1.1"));
-        engine::models::moss_voicegen::MossVoiceGenLengthBounds bounds;
+        engine::models::moss::delay::LengthBounds bounds;
         bounds.min_frames = min_frames;
         bounds.max_frames = max_frames;
-        engine::models::moss_voicegen::MossVoiceGenDelayDecoder decoder(config, sampling, seed, bounds);
+        engine::models::moss::delay::Decoder decoder(config, sampling, seed, bounds);
 
         const auto generation_start = std::chrono::steady_clock::now();
         backbone.begin_generation(prompt_rows + max_steps + 8);
         auto hidden = backbone.prefill(prompt.text_tokens, prompt_bias);
 
-        engine::models::moss_voicegen::MossVoiceGenStepLogits logits;
+        engine::models::moss::delay::StepLogits logits;
         std::vector<float> row_bias(static_cast<size_t>(hidden_size), 0.0F);
         int64_t steps = 0;
         std::vector<int32_t> text_trace;

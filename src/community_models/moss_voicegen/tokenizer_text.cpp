@@ -1,54 +1,12 @@
 #include "engine/community_models/moss_voicegen/tokenizer_text.h"
 
 #include "engine/framework/tokenizers/llama_bpe.h"
+#include "engine/models/moss/shared/delay_prompt.h"
 
 #include <stdexcept>
 #include <utility>
 
 namespace engine::models::moss_voicegen {
-namespace {
-
-// Template fragments copied verbatim from MossTTSDelayProcessor so the encoded prompt
-// matches the reference token-for-token.
-constexpr const char * kUserRolePrefix = "user\n";
-constexpr const char * kUserReferencePrefix = "<user_inst>\n- Reference(s):\n";
-constexpr const char * kUserTextSuffix = "\n- Text:\n";
-constexpr const char * kUserInstSuffix = "\n</user_inst>";
-constexpr const char * kAssistantTurnPrefix = "\n";
-constexpr const char * kAssistantRolePrefix = "assistant\n";
-constexpr const char * kNoneValue = "None";
-constexpr const char * kImStartToken = "<|im_start|>";
-constexpr const char * kImEndToken = "<|im_end|>";
-
-std::string normalize_template_value(const std::optional<std::string> & value) {
-    if (!value.has_value()) {
-        return kNoneValue;
-    }
-    std::string resolved = *value;
-    const auto first = resolved.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) {
-        return kNoneValue;
-    }
-    const auto last = resolved.find_last_not_of(" \t\r\n");
-    resolved = resolved.substr(first, last - first + 1);
-    return resolved.empty() ? kNoneValue : resolved;
-}
-
-// The fields between "- Reference(s):" and the target text. Voice design fills the
-// instruction and the language; the remaining control slots stay "None".
-std::string render_after_reference(
-    const std::optional<std::string> & instruction,
-    const std::optional<std::string> & language) {
-    return std::string("\n- Instruction:\n") + normalize_template_value(instruction)
-        + "\n- Tokens:\n" + kNoneValue
-        + "\n- Quality:\n" + kNoneValue
-        + "\n- Sound Event:\n" + kNoneValue
-        + "\n- Ambient Sound:\n" + kNoneValue
-        + "\n- Language:\n" + normalize_template_value(language)
-        + kUserTextSuffix;
-}
-
-}  // namespace
 
 struct MossVoiceGenTextProcessor::Impl {
     std::shared_ptr<const MossVoiceGenAssets> assets;
@@ -73,8 +31,8 @@ MossVoiceGenTextProcessor::MossVoiceGenTextProcessor(std::shared_ptr<const MossV
 
     // The config does not carry the chat-control ids; the reference processor resolves
     // them through the tokenizer, so do the same rather than hardcoding Qwen's values.
-    const auto im_start = impl_->tokenizer->find_token_id(kImStartToken);
-    const auto im_end = impl_->tokenizer->find_token_id(kImEndToken);
+    const auto im_start = impl_->tokenizer->find_token_id("<|im_start|>");
+    const auto im_end = impl_->tokenizer->find_token_id("<|im_end|>");
     if (!im_start.has_value() || !im_end.has_value()) {
         throw std::runtime_error("MOSS-VoiceGenerator tokenizer is missing the chat control tokens");
     }
@@ -96,12 +54,13 @@ moss::TokenRows MossVoiceGenTextProcessor::build_generation_prefix(
     // reference processor does. Encoding the fragments separately would split merges
     // across the seams — the text's trailing "." and the suffix's "\n" are one token in
     // the reference, two if the suffix is encoded on its own.
-    const std::string prompt = std::string(kImStartToken) + kUserRolePrefix
-        + kUserReferencePrefix + kNoneValue
-        + render_after_reference(instruction, language)
-        + text
-        + kUserInstSuffix + kImEndToken
-        + kAssistantTurnPrefix + kImStartToken + kAssistantRolePrefix;
+    delay::PromptFields fields;
+    // Voice design has no reference recording: the speaker comes from the instruction, so
+    // the reference slot stays "None" and every other control slot follows the default.
+    fields.instruction = instruction;
+    fields.language = language;
+    fields.text = text;
+    const std::string prompt = delay::render_turn(fields);
     builder.push_text_tokens(impl_->tokenizer->encode(prompt, true));
     // Unlike moss_tts_local, the delay family does not seed the audio start token: the
     // model emits it itself on the first step, and generate() keys "is this a

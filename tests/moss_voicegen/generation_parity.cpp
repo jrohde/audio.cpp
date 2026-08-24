@@ -7,9 +7,9 @@
 //       --generation <ref_generation.json> [--weight-type bf16] [--threads N]
 
 #include "engine/community_models/moss_voicegen/assets.h"
-#include "engine/community_models/moss_voicegen/backbone.h"
-#include "engine/community_models/moss_voicegen/delay_decoder.h"
-#include "engine/community_models/moss_voicegen/heads.h"
+#include "engine/models/moss/shared/delay_backbone.h"
+#include "engine/models/moss/shared/delay_decoder.h"
+#include "engine/models/moss/shared/delay_heads.h"
 #include "engine/community_models/moss_voicegen/tokenizer_text.h"
 #include "engine/framework/core/backend.h"
 #include "engine/framework/core/execution_context.h"
@@ -116,22 +116,24 @@ int main(int argc, char ** argv) {
         backend_config.threads = std::stoi(arg_value(argc, argv, "--threads", "8"));
         engine::core::ExecutionContext execution_context(backend_config);
 
-        const engine::models::moss_voicegen::MossVoiceGenBackboneRuntime backbone(
-            assets, execution_context, 512ull * 1024ull * 1024ull, 8192ull * 1024ull * 1024ull, weight_type);
-        const engine::models::moss_voicegen::MossVoiceGenHeadsRuntime heads(
-            assets, execution_context, 256ull * 1024ull * 1024ull, 4096ull * 1024ull * 1024ull, weight_type);
+        const engine::models::moss::delay::BackboneRuntime backbone(
+            assets->config,
+            assets->model_weights, execution_context, 512ull * 1024ull * 1024ull, 8192ull * 1024ull * 1024ull, weight_type);
+        const engine::models::moss::delay::HeadsRuntime heads(
+            assets->config,
+            assets->model_weights, execution_context, 256ull * 1024ull * 1024ull, 4096ull * 1024ull * 1024ull, weight_type);
 
-        engine::models::moss_voicegen::MossVoiceGenSamplingOptions sampling;
+        engine::models::moss::delay::SamplingOptions sampling;
         sampling.do_sample = false;
         sampling.text_temperature = 1.0F;
         sampling.audio_temperature = 1.0F;
         sampling.audio_repetition_penalty = 1.0F;
-        engine::models::moss_voicegen::MossVoiceGenDelayDecoder decoder(config, sampling, 0);
+        engine::models::moss::delay::Decoder decoder(config, sampling, 0);
 
         backbone.begin_generation(prompt_rows + steps + 8);
         auto hidden = backbone.prefill(prompt.text_tokens, prompt_bias);
 
-        engine::models::moss_voicegen::MossVoiceGenStepLogits logits;
+        engine::models::moss::delay::StepLogits logits;
         std::vector<float> row_bias(static_cast<size_t>(hidden_size), 0.0F);
         int64_t mismatching_rows = 0;
         int64_t produced = 0;

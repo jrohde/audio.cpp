@@ -2,13 +2,13 @@
 
 #include "engine/framework/assets/tensor_source.h"
 #include "engine/framework/core/execution_context.h"
-#include "engine/community_models/moss_voicegen/assets.h"
+#include "engine/models/moss/shared/delay_config.h"
 
 #include <cstdint>
 #include <memory>
 #include <vector>
 
-namespace engine::models::moss_voicegen {
+namespace engine::models::moss::delay {
 
 // Qwen3 backbone (language_model.*) runtime: loads the language-model weights and runs
 // a prefill forward that returns the final hidden states. Text tokens are embedded in
@@ -17,21 +17,20 @@ namespace engine::models::moss_voicegen {
 //
 // Adapted from src/models/moss/moss_tts_local/backbone.cpp. The two differ only in the
 // weight prefix and in what consumes the hidden state — moss_tts_local hands it to a
-// depth transformer, the delay family hands it to 1 + n_vq heads. Kept local per the
-// maintainer's local-first request; an obvious candidate for sharing once MOSS-TTSD
-// lands and there is a third caller.
-class MossVoiceGenBackboneRuntime {
+// depth transformer, the delay family hands it to 1 + n_vq heads.
+class BackboneRuntime {
 public:
-    MossVoiceGenBackboneRuntime(
-        std::shared_ptr<const MossVoiceGenAssets> assets,
+    BackboneRuntime(
+        Config config,
+        std::shared_ptr<const assets::TensorSource> weights,
         core::ExecutionContext & execution_context,
         size_t graph_arena_bytes,
         size_t weight_context_bytes,
         assets::TensorStorageType weight_storage_type);
-    ~MossVoiceGenBackboneRuntime();
+    ~BackboneRuntime();
 
-    MossVoiceGenBackboneRuntime(const MossVoiceGenBackboneRuntime &) = delete;
-    MossVoiceGenBackboneRuntime & operator=(const MossVoiceGenBackboneRuntime &) = delete;
+    BackboneRuntime(const BackboneRuntime &) = delete;
+    BackboneRuntime & operator=(const BackboneRuntime &) = delete;
 
     int64_t hidden_size() const noexcept;
 
@@ -64,4 +63,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace engine::models::moss_voicegen
+}  // namespace engine::models::moss::delay

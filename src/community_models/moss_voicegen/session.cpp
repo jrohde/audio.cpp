@@ -133,14 +133,16 @@ void MossVoiceGenSession::prepare(const runtime::SessionPreparationRequest &) {
     codebook_spec.tensor_prefix = "emb_ext";
     codebooks_ = std::make_unique<moss::AudioCodebookEmbeddings>(*assets_->model_weights, codebook_spec);
 
-    backbone_ = std::make_unique<MossVoiceGenBackboneRuntime>(
-        assets_,
+    backbone_ = std::make_unique<delay::BackboneRuntime>(
+        assets_->config,
+        assets_->model_weights,
         execution_context(),
         backbone_graph_arena_bytes_,
         backbone_weight_context_bytes_,
         weight_storage_type_);
-    heads_ = std::make_unique<MossVoiceGenHeadsRuntime>(
-        assets_,
+    heads_ = std::make_unique<delay::HeadsRuntime>(
+        assets_->config,
+        assets_->model_weights,
         execution_context(),
         heads_graph_arena_bytes_,
         heads_weight_context_bytes_,
@@ -160,9 +162,9 @@ MossVoiceGenSession::GeneratedChunk MossVoiceGenSession::generate_chunk(
     const std::string & text,
     const std::string & instruction,
     const std::optional<std::string> & language,
-    const MossVoiceGenSamplingOptions & sampling,
+    const delay::SamplingOptions & sampling,
     uint32_t seed,
-    MossVoiceGenLengthBounds bounds_override) {
+    delay::LengthBounds bounds_override) {
     const auto & config = assets_->config;
     const int64_t n_vq = config.num_codebooks;
     const int64_t hidden_size = config.backbone.hidden_size;
@@ -175,7 +177,7 @@ MossVoiceGenSession::GeneratedChunk MossVoiceGenSession::generate_chunk(
 
     const auto characters = static_cast<int64_t>(text.size());
     const double expected_frames = static_cast<double>(characters) * kFramesPerCharacter;
-    MossVoiceGenLengthBounds bounds = bounds_override;
+    delay::LengthBounds bounds = bounds_override;
     if (bounds.min_frames <= 0) {
         bounds.min_frames = std::max<int64_t>(kMinFramesFloor, static_cast<int64_t>(expected_frames * kFloorFraction));
     }
@@ -193,11 +195,11 @@ MossVoiceGenSession::GeneratedChunk MossVoiceGenSession::generate_chunk(
             prompt_bias.data() + static_cast<size_t>(row * hidden_size));
     }
 
-    MossVoiceGenDelayDecoder decoder(config, sampling, seed, bounds);
+    delay::Decoder decoder(config, sampling, seed, bounds);
     backbone_->begin_generation(prompt_rows + max_steps + 8);
     auto hidden = backbone_->prefill(prompt.text_tokens, prompt_bias);
 
-    MossVoiceGenStepLogits logits;
+    delay::StepLogits logits;
     std::vector<float> row_bias(static_cast<size_t>(hidden_size), 0.0F);
     GeneratedChunk chunk;
     for (int64_t step = 0; step < max_steps; ++step) {
@@ -265,11 +267,11 @@ runtime::TaskResult MossVoiceGenSession::run(const runtime::TaskRequest & reques
         language = *language_option;
     }
 
-    MossVoiceGenLengthBounds bounds_override;
+    delay::LengthBounds bounds_override;
     bounds_override.min_frames = option_int(request.options, {"min_frames"}, 0);
     bounds_override.max_frames = option_int(request.options, {"max_frames"}, 0);
 
-    MossVoiceGenSamplingOptions sampling;
+    delay::SamplingOptions sampling;
     sampling.text_temperature = option_float(request.options, {"moss_voicegen.text_temperature"}, sampling.text_temperature);
     sampling.audio_temperature = option_float(request.options, {"temperature"}, sampling.audio_temperature);
     sampling.audio_top_p = option_float(request.options, {"top_p"}, sampling.audio_top_p);

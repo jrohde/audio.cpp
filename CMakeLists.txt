@@ -647,6 +647,11 @@ audiocpp_add_model(moss
         src/models/moss/moss_tts_nano/session.cpp
         src/models/moss/moss_tts_nano/tokenizer_text.cpp
         src/models/moss/shared/audio_tokenizer_decoder.cpp
+        src/models/moss/shared/delay_backbone.cpp
+        src/models/moss/shared/delay_config.cpp
+        src/models/moss/shared/delay_decoder.cpp
+        src/models/moss/shared/delay_heads.cpp
+        src/models/moss/shared/delay_prompt.cpp
         src/models/moss/shared/audio_tokenizer_encoder.cpp
         src/models/moss/shared/audio_tokenizer_config.cpp
         src/models/moss/shared/audio_tokenizer_quantizer.cpp
@@ -671,9 +676,6 @@ audiocpp_add_model(moss
 audiocpp_add_model(moss_voicegen
     SOURCES
         src/community_models/moss_voicegen/assets.cpp
-        src/community_models/moss_voicegen/backbone.cpp
-        src/community_models/moss_voicegen/delay_decoder.cpp
-        src/community_models/moss_voicegen/heads.cpp
         src/community_models/moss_voicegen/loader.cpp
         src/community_models/moss_voicegen/session.cpp
         src/community_models/moss_voicegen/tokenizer_text.cpp
