@@ -33,8 +33,8 @@ public:
     MossAudioTokenizerEncoder(const MossAudioTokenizerEncoder &) = delete;
     MossAudioTokenizerEncoder & operator=(const MossAudioTokenizerEncoder &) = delete;
 
-    // Encodes a waveform given as {left, right} channels (each with the same
-    // per-channel sample count, 48 kHz) into [num_quantizers][frames] codes.
+    // Encodes a waveform into [num_quantizers][frames] codes. The channel count must match
+    // the config: {left, right} at 48 kHz for v2 and Nano, a single channel at 24 kHz for v1.
     std::vector<std::vector<int32_t>> encode(const std::vector<std::vector<float>> & channels) const;
 
 private:

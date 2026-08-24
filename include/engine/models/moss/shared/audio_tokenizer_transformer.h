@@ -124,11 +124,17 @@ inline TransformerWeights load_transformer(
 
     TransformerWeights weights;
     weights.spec = spec;
-    weights.input_proj = load(prefix + ".input_proj.weight", {spec.d_model, spec.input_dim});
-    // Upstream's ProjectedTransformer only creates an output projection when the stage
-    // changes width. v2 ships one on every module; v1 leaves it out wherever
-    // output_dimension already equals d_model, so treat it as optional and fall through to
-    // the identity in that case.
+    // Both projections are optional for the same reason: upstream's ProjectedTransformer
+    // only creates one when the stage changes width. v2 ships both on every module; v1
+    // leaves out whichever is an identity, which is the output projection on three of four
+    // decoder stages and the input projection on three of four encoder stages.
+    const std::string input_proj_name = prefix + ".input_proj.weight";
+    if (codec_weights.has(input_proj_name)) {
+        weights.input_proj = load(input_proj_name, {spec.d_model, spec.input_dim});
+    } else if (spec.input_dim != spec.d_model) {
+        throw std::runtime_error(
+            "MOSS codec stage " + prefix + " changes width but carries no input projection");
+    }
     const std::string output_proj_name = prefix + ".output_proj.weight";
     if (codec_weights.has(output_proj_name)) {
         weights.output_proj = load(output_proj_name, {spec.output_dim, spec.d_model});
@@ -293,8 +299,11 @@ inline core::TensorValue run_transformer(
     int64_t steps,
     const std::vector<AttentionWindow> * windows = nullptr) {
     const auto & spec = weights.spec;
-    auto x = modules::LinearModule(binding::linear_config(spec.input_dim, spec.d_model, false))
-                 .build(ctx, input, binding::linear_data(ctx, weights.input_proj));
+    auto x = input;
+    if (weights.input_proj.valid()) {
+        x = modules::LinearModule(binding::linear_config(spec.input_dim, spec.d_model, false))
+                .build(ctx, x, binding::linear_data(ctx, weights.input_proj));
+    }
     for (const auto & layer : weights.layers) {
         x = transformer_layer(ctx, x, layer, spec, positions, mask, windows, steps);
     }

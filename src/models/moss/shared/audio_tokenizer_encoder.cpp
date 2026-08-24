@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -103,11 +104,15 @@ MossAudioTokenizerEncoder::~MossAudioTokenizerEncoder() = default;
 
 std::vector<std::vector<int32_t>> MossAudioTokenizerEncoder::encode(
     const std::vector<std::vector<float>> & channels) const {
-    if (channels.size() != 2) {
-        throw std::runtime_error("MOSS codec encoder requires stereo (2-channel) input");
+    const int64_t expected_channels = impl_->config.channels;
+    if (static_cast<int64_t>(channels.size()) != expected_channels) {
+        throw std::runtime_error(
+            "MOSS codec encoder expects " + std::to_string(expected_channels) + "-channel input");
     }
-    if (channels[0].size() != channels[1].size()) {
-        throw std::runtime_error("MOSS codec encoder channels must have equal length");
+    for (const auto & channel : channels) {
+        if (channel.size() != channels[0].size()) {
+            throw std::runtime_error("MOSS codec encoder channels must have equal length");
+        }
     }
     const int64_t raw_per_channel = static_cast<int64_t>(channels[0].size());
     if (raw_per_channel <= 0) {
@@ -121,14 +126,18 @@ std::vector<std::vector<int32_t>> MossAudioTokenizerEncoder::encode(
     const int64_t frames = (raw_per_channel + impl_->samples_per_frame - 1) / impl_->samples_per_frame;
     const int64_t valid_frames = raw_per_channel / impl_->samples_per_frame;
     const int64_t per_channel = frames * impl_->samples_per_frame;
-    const int64_t interleaved = per_channel * 2;
+    // Stereo codecs (v2, Nano) process one interleaved stream; mono codecs (v1) feed the
+    // waveform straight in. Either way the graph below sees a single-feature stream.
+    const int64_t interleaved = per_channel * expected_channels;
     std::vector<float> waveform(static_cast<size_t>(interleaved), 0.0F);
 #ifdef _OPENMP
 #pragma omp parallel for if(raw_per_channel >= 4096)
 #endif
     for (int64_t i = 0; i < raw_per_channel; ++i) {
-        waveform[static_cast<size_t>(2 * i)] = channels[0][static_cast<size_t>(i)];
-        waveform[static_cast<size_t>(2 * i + 1)] = channels[1][static_cast<size_t>(i)];
+        for (int64_t channel = 0; channel < expected_channels; ++channel) {
+            waveform[static_cast<size_t>(expected_channels * i + channel)] =
+                channels[static_cast<size_t>(channel)][static_cast<size_t>(i)];
+        }
     }
 
     ggml_init_params params{impl_->graph_arena_bytes, nullptr, true};

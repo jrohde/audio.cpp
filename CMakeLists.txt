@@ -1533,6 +1533,15 @@ if (ENGINE_BUILD_TESTS)
         tests/moss_voicegen/codec_decode_parity.cpp
     )
 
+    add_executable(moss_codec_encode_parity
+        tests/moss/codec_encode_parity.cpp
+    )
+
+    target_link_libraries(moss_codec_encode_parity PRIVATE engine_runtime ggml)
+    if (ENGINE_ENABLE_OPENMP)
+        target_link_libraries(moss_codec_encode_parity PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+
     target_link_libraries(moss_voicegen_codec_parity PRIVATE engine_runtime ggml)
     if (ENGINE_ENABLE_OPENMP)
         target_link_libraries(moss_voicegen_codec_parity PRIVATE OpenMP::OpenMP_CXX)
