@@ -6,6 +6,7 @@ export interface InstallPackageChoice {
   path: string;
   format: string;
   precision: string;
+  session_options?: StringMap;
 }
 
 export interface CatalogEntry {
@@ -21,10 +22,12 @@ export interface CatalogEntry {
   min_vram_gb?: number;
   input_hint?: string;
   input_hint_en?: string;
+  default_text?: string;
   default_options?: Record<string, unknown>;
   load_options?: StringMap;
   session_options?: StringMap;
   request_options?: string[];
+  required_request_options?: string[];
   builtin_voices?: string[];
   default_voice?: string;
 }
@@ -52,6 +55,7 @@ export interface LoadedModel {
   task: string;
   mode: string;
   path: string;
+  session_options?: StringMap;
   loaded: boolean;
 }
 

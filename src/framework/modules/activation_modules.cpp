@@ -24,6 +24,16 @@ const core::ModuleSchema kReluSchema = {
     "Applies rectified linear activation elementwise.",
 };
 
+const core::ModuleSchema kLeakyReluSchema = {
+    "LeakyReLU",
+    "nn.activation",
+    kActivationInputs,
+    1,
+    kActivationOutputs,
+    1,
+    "Applies leaky rectified linear activation elementwise.",
+};
+
 const core::ModuleSchema kSigmoidSchema = {
     "Sigmoid",
     "nn.activation",
@@ -72,6 +82,16 @@ const core::ModuleSchema kSiluSchema = {
     kActivationOutputs,
     1,
     "Applies SiLU activation elementwise.",
+};
+
+const core::ModuleSchema kSeluSchema = {
+    "SELU",
+    "nn.activation",
+    kActivationInputs,
+    1,
+    kActivationOutputs,
+    1,
+    "Applies SELU activation elementwise.",
 };
 
 const core::ModuleSchema kSwooshLSchema = {
@@ -317,6 +337,33 @@ const core::ModuleSchema & ReluModule::static_schema() noexcept {
     return kReluSchema;
 }
 
+LeakyReluModule::LeakyReluModule(LeakyReluConfig config) : config_(config) {
+}
+
+const LeakyReluConfig & LeakyReluModule::config() const noexcept {
+    return config_;
+}
+
+const core::ModuleSchema & LeakyReluModule::schema() const noexcept {
+    return static_schema();
+}
+
+core::TensorValue LeakyReluModule::build(core::ModuleBuildContext & ctx, const core::TensorValue & input) const {
+    if (ctx.ggml == nullptr) {
+        throw std::runtime_error("ModuleBuildContext.ggml is null");
+    }
+    core::validate_rank_between(input, 1, core::kMaxTensorRank, "input");
+    const auto contiguous = core::ensure_backend_addressable_layout(ctx, input);
+    return core::wrap_tensor(
+        ggml_leaky_relu(ctx.ggml, contiguous.tensor, config_.negative_slope, false),
+        input.shape,
+        GGML_TYPE_F32);
+}
+
+const core::ModuleSchema & LeakyReluModule::static_schema() noexcept {
+    return kLeakyReluSchema;
+}
+
 const core::ModuleSchema & SigmoidModule::schema() const noexcept {
     return static_schema();
 }
@@ -391,6 +438,31 @@ core::TensorValue SiluModule::build(core::ModuleBuildContext & ctx, const core::
 
 const core::ModuleSchema & SiluModule::static_schema() noexcept {
     return kSiluSchema;
+}
+
+const core::ModuleSchema & SeluModule::schema() const noexcept {
+    return static_schema();
+}
+
+core::TensorValue SeluModule::build(core::ModuleBuildContext & ctx, const core::TensorValue & input) const {
+    if (ctx.ggml == nullptr) {
+        throw std::runtime_error("ModuleBuildContext.ggml is null");
+    }
+    core::validate_rank_between(input, 1, core::kMaxTensorRank, "input");
+    constexpr float kAlpha = 1.6732632423543772848170429916717F;
+    constexpr float kScale = 1.0507009873554804934193349852946F;
+    const auto contiguous = core::ensure_backend_addressable_layout(ctx, input);
+    auto positive = ggml_relu(ctx.ggml, contiguous.tensor);
+    auto negative = ggml_scale(ctx.ggml, ggml_relu(ctx.ggml, ggml_scale(ctx.ggml, contiguous.tensor, -1.0F)), -1.0F);
+    negative = ggml_scale(ctx.ggml, ggml_expm1(ctx.ggml, negative), kAlpha);
+    return core::wrap_tensor(
+        ggml_scale(ctx.ggml, ggml_add(ctx.ggml, positive, negative), kScale),
+        input.shape,
+        GGML_TYPE_F32);
+}
+
+const core::ModuleSchema & SeluModule::static_schema() noexcept {
+    return kSeluSchema;
 }
 
 const core::ModuleSchema & SwooshLModule::schema() const noexcept {

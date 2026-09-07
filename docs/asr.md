@@ -3,6 +3,7 @@
 | Model | Family | Mode(s) | Quick Start |
 |---|---|---|---|
 | Fun-ASR-Nano | `fun_asr_nano` | offline | [Fun-ASR-Nano](#fun-asr-nano) |
+| Granite Speech 5.0 TurboCTC | `granite5asr` | offline | [Granite Speech 5.0 TurboCTC](community_models/granite5asr.md) |
 | Qwen3 ASR | `qwen3_asr` | offline, streaming | [Qwen3 ASR](#qwen3-asr) |
 | Citrinet ASR | `citrinet_asr` | offline | [Citrinet ASR](#citrinet-asr) |
 | Kroko Community ASR | `kroko_asr` | offline, streaming | [Kroko Community ASR](#kroko-community-asr) |
@@ -327,6 +328,11 @@ chunking, server usage, and validation notes.
 ## VibeVoice ASR
 
 VibeVoice ASR is an offline ASR model with greedy, sampling, and beam-search decode paths. It can return transcription text and structured segment/speaker-turn output when the model produces timestamps.
+
+A fully quantized port of the same model — INT8 activations through the encoder,
+ternary BitNet weights in the decoder — lives under community models as
+`vibeasr`: see [VibeASR](community_models/vibeasr.md). It is not a separate
+model, only a CPU-only alternative numeric pipeline for the same weights.
 
 | Field | Value |
 |---|---|

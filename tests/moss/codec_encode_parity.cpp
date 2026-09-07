@@ -19,7 +19,7 @@
 #include "engine/framework/core/backend.h"
 #include "engine/framework/core/execution_context.h"
 #include "engine/framework/io/json.h"
-#include "engine/models/moss/shared/audio_tokenizer_encoder.h"
+#include "engine/framework/codecs/moss_audio_tokenizer_codec_runtime.h"
 
 #include <cmath>
 #include <cstdint>
@@ -27,6 +27,7 @@
 #include <exception>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -93,15 +94,21 @@ int main(int argc, char ** argv) {
         backend_config.threads = std::stoi(arg_value(argc, argv, "--threads", "8"));
         engine::core::ExecutionContext execution_context(backend_config);
 
-        const engine::models::moss::MossAudioTokenizerEncoder codec(
-            *weights,
+        engine::codecs::MossAudioTokenizerCodecRuntimeOptions options;
+        options.weight_context_bytes = 4096ull * 1024ull * 1024ull;
+        options.encoder_graph_arena_bytes = 2048ull * 1024ull * 1024ull;
+        engine::codecs::MossAudioTokenizerCodecRuntime codec(
+            std::move(weights),
             execution_context,
             kQuantizers,
-            4096ull * 1024ull * 1024ull,
-            2048ull * 1024ull * 1024ull,
-            engine::models::moss::moss_audio_tokenizer_v1_config());
+            options,
+            engine::codecs::moss_audio_tokenizer_v1_config());
 
-        const auto codes = codec.encode({waveform()});
+        engine::codecs::MossAudioTokenizerAudio input;
+        input.sampling_rate = kSampleRate;
+        input.channels = {waveform()};
+        const auto result = codec.encode(input);
+        const auto & codes = result.codebooks;
 
         const auto expected_quantizers = json::require_i64(reference, "quantizers");
         const auto expected_frames = json::require_i64(reference, "frames");

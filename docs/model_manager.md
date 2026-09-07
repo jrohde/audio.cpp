@@ -5,6 +5,106 @@ framework's expected `models/` layout. It reads package metadata from
 `model_specs/*.json`, which is the current source of truth for default download
 links.
 
+The same package surface is also available through the reusable native C++
+`audiocpp_package_manager` library. Two native frontends use that library:
+
+- `audiocpp_server` exposes asynchronous management endpoints for the embedded
+  WebUI.
+- `audiocpp_model_manager` provides direct headless/CLI and Docker access
+  without starting a server.
+
+The Python v2 manager remains a supported alternative for existing scripted
+workflows while the native command surface matures.
+
+## Opt-in Native Network Backend
+
+Native model management is disabled by default so ordinary CLI and server
+builds do not configure, fetch, compile, or link an HTTP/TLS dependency. Enable
+it explicitly to build the reusable library, standalone manager, and server
+download/install endpoints:
+
+```bash
+cmake -S . -B build -DAUDIOCPP_BUILD_NATIVE_MODEL_MANAGER=ON
+cmake --build build --target audiocpp_model_manager audiocpp_server
+```
+
+With build helper scripts, use the native-manager flag:
+
+```bash
+./scripts/build_linux.sh --backend cuda --native-model-manager --target audiocpp_server
+```
+
+```powershell
+.\scripts\build_windows.ps1 -NativeModelManager -Target audiocpp_server
+```
+
+Run the managed WebUI with:
+
+```bash
+audiocpp_server --ui --ui-management --backend cuda
+```
+
+The enabled native library, server, and standalone manager share one vendored
+`cpp-httplib` transport on Windows, Linux, and macOS. HTTPS is enabled with a
+pinned BoringSSL release that is fetched at configure time and linked
+statically. The resulting executables do not require libcurl, a system OpenSSL
+development package, or separate TLS DLLs at runtime.
+
+Offline and sandboxed builds may provide the same verified source archive with
+`-DAUDIOCPP_BORINGSSL_ARCHIVE=/path/to/boringssl.tar.gz`. The Nix package does
+this through a fixed-output derivation, so its CMake phase never accesses the
+network.
+
+With build helper scripts, use `--boringssl-archive <path>` on Linux/macOS or
+`-BoringSslArchive <path>` on Windows.
+
+Packagers that prefer their distribution's OpenSSL can select it explicitly:
+
+```bash
+cmake -S . -B build \
+  -DAUDIOCPP_BUILD_NATIVE_MODEL_MANAGER=ON \
+  -DAUDIOCPP_USE_SYSTEM_OPENSSL=ON
+```
+
+With build helper scripts, use `--system-openssl` on Linux/macOS or
+`-SystemOpenSsl` on Windows.
+
+When using system OpenSSL on machines with multiple OpenSSL installations, make
+sure CMake resolves the distribution OpenSSL that will also be available where
+the binary runs. Bundled BoringSSL is the simpler portable choice for normal
+local builds and release images.
+
+## Native Standalone Manager
+
+The native executable embeds the active `model_specs/*.json` catalog. An
+external `model_specs/` below `--repository-root` is an optional development
+override, not a deployment requirement.
+
+```bash
+audiocpp_model_manager list
+audiocpp_model_manager list --remote
+audiocpp_model_manager info qwen3_asr_0_6b_q8_0 --remote
+audiocpp_model_manager install qwen3_asr_0_6b_q8_0 --models-dir models
+audiocpp_model_manager clean qwen3_asr_0_6b_q8_0 --models-dir models
+audiocpp_model_manager remove qwen3_asr_0_6b_q8_0 --models-dir models
+```
+
+`list` and `info` return machine-readable JSON. Native installation uses the
+same downloader, staging, size validation, atomic publication, shared-sidecar,
+and version metadata logic as the server/WebUI.
+
+For a container image, no server process is required:
+
+```dockerfile
+RUN audiocpp_model_manager install qwen3_asr_0_6b_q8_0 --models-dir /models
+```
+
+```text
+                     +-- audiocpp_server -> REST API / native WebUI
+model_specs/*.json -> audiocpp_package_manager
+                     +-- audiocpp_model_manager -> CLI / Docker / scripts
+```
+
 When a family has a ready-to-use GGUF package, the default install should be that
 GGUF package. The old safetensors/converter catalog is still available as
 `tools/model_manager_deprecated.py`, but it is a legacy path for models that have
@@ -22,7 +122,53 @@ For support status and tested precision coverage, see the [GGUF guide](gguf.md).
 For measured 16-bit vs Q8 speed and peak-VRAM results, see the
 [Q8 performance report](reports/gguf_q8_performance.md).
 
+## Download Sources
+
+Both the native package manager and `tools/model_manager_v2.py` download from
+Hugging Face (`kind: "huggingface_snapshot"`) or ModelScope
+(`kind: "modelscope_snapshot"`); see
+[maintainers/model_specs.md](maintainers/model_specs.md) for the spec fields.
+The native endpoints can be overridden for mirrors or tests with
+`AUDIOCPP_HF_BASE_URL` (default `https://huggingface.co`) and
+`AUDIOCPP_MS_BASE_URL` (default `https://www.modelscope.cn`). The Python tool
+uses the standard `HF_ENDPOINT` for Hugging Face and the same
+`AUDIOCPP_MS_BASE_URL` for ModelScope.
+
+Authentication is provider-scoped: Hugging Face requests may carry
+`HF_TOKEN` / `HUGGING_FACE_HUB_TOKEN`, while ModelScope requests only carry
+`AUDIOCPP_MS_TOKEN` (optional, for access-restricted ModelScope repos). The
+Hugging Face token is never sent to a ModelScope endpoint, and vice versa.
+
+### Python Source Override
+
+The Python v2 manager can redirect any package to ModelScope on demand,
+without editing `model_specs/*.json`:
+
+```bash
+python3 tools/model_manager_v2.py install qwen3_tts --source modelscope --source-repo HereIsMark/audio.cpp-gguf
+```
+
+`--source modelscope` is accepted by `install` and `sizes`. `--source-repo`
+names the ModelScope repo (`namespace/name`); when omitted, the spec's own
+repo name is reused on ModelScope. Passing `--source-repo` without
+`--source modelscope` is rejected. Revision translation: a spec revision that
+is unset or `main` becomes ModelScope's default branch `master`; any other
+explicit revision passes through unchanged.
+
+Note that manifest etags are source-specific (Hugging Face etag vs ModelScope
+sha256), so cross-source freshness checks can spuriously report that an
+installed package has an update. Query with the same `--source` that was used
+to install.
+
 ## Dependencies
+
+The native manager needs no Python runtime. The default bundled-TLS build needs
+network access at CMake configure time to fetch the pinned BoringSSL source
+archive, unless `AUDIOCPP_BORINGSSL_ARCHIVE` points at a local copy. Runtime
+model installation needs network access to the package source, usually Hugging
+Face.
+
+The Python v2 manager needs:
 
 - Python 3
 - Network access to the upstream model source
@@ -30,7 +176,24 @@ For measured 16-bit vs Q8 speed and peak-VRAM results, see the
 Legacy converter installs through `tools/model_manager_deprecated.py` may also
 need `torch`, `safetensors`, `PyYAML`, or model-specific conversion inputs.
 
-## Commands
+## Native Commands
+
+`audiocpp_model_manager` supports the same package ids as the managed WebUI:
+
+- `list` shows the available package ids
+- `list --remote` includes remote availability and package-size metadata where
+  available
+- `info <package>` shows one package's install status and metadata
+- `info <package> --remote` also checks the remote package source
+- `install <package>` downloads one package into a models root
+- `clean <package>` removes incomplete staging data for one package
+- `remove <package>` removes the files managed by one installed package
+
+Use `--models-dir PATH` to select the installation root. Use
+`--repository-root PATH` only when developing against an external
+`model_specs/` override; normal deployed binaries use the embedded catalog.
+
+## Python v2 Commands
 
 - `list` shows the available package ids
 - `list --json` prints a machine-readable package catalog
